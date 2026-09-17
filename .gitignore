@@ -1,0 +1,38 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Virtual Environments
+venv/
+env/
+ENV/
+fraud-env/
+.venv/
+
+# Machine Learning Artifacts & Models
+*.pkl
+*.joblib
+*.onnx
+app/models/*.pkl
+app/models/metrics_active.json
+
+# Large Datasets & Parquet Files
+*.parquet
+*.csv
+data/raw/*
+data/processed/*
+!data/processed/.gitkeep
+
+# Local SQLite Database & Logs
+*.db
+*.sqlite
+*.sqlite3
+fraud_logs.db
+
+# IDE & OS Configuration Files
+.vscode/
+.idea/
+.DS_Store
+*.log

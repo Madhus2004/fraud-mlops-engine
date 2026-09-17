@@ -1,0 +1,160 @@
+import json
+import os
+import sqlite3
+import joblib
+import numpy as np
+import pandas as pd
+from sklearn.metrics import average_precision_score, precision_recall_curve
+from xgboost import XGBClassifier
+
+# File Paths
+HOLDOUT_DATA_PATH = "data/processed/holdout_test.parquet"
+REFERENCE_DATA_PATH = "data/processed/reference_baseline.parquet"
+DB_PATH = "fraud_logs.db"
+
+V1_MODEL_PATH = "app/models/xgboost_v1.pkl"
+V1_METRICS_PATH = "app/models/metrics_v1.json"
+
+ACTIVE_MODEL_PATH = "app/models/xgboost_active.pkl"
+ACTIVE_METRICS_PATH = "app/models/metrics_active.json"
+
+
+def find_optimal_threshold(y_true, y_probs, min_recall=0.80):
+    """Finds the decision threshold maximizing Precision while preserving Recall floor."""
+    precisions, recalls, thresholds = precision_recall_curve(y_true, y_probs)
+    optimal_threshold = 0.5
+    best_precision = 0.0
+    best_recall = 0.0
+
+    for p, r, t in zip(precisions[:-1], recalls[:-1], thresholds):
+        if r >= min_recall and p > best_precision:
+            best_precision = float(p)
+            best_recall = float(r)
+            optimal_threshold = float(t)
+
+    if best_precision == 0.0:
+        f1_scores = 2 * (precisions * recalls) / (precisions + recalls + 1e-10)
+        best_idx = np.argmax(f1_scores)
+        optimal_threshold = float(thresholds[best_idx])
+        best_precision = float(precisions[best_idx])
+        best_recall = float(recalls[best_idx])
+
+    return optimal_threshold, best_precision, best_recall
+
+
+def fetch_feedback_logs_from_db():
+    """Extracts inference logs from SQLite that have ground-truth feedback attached."""
+    if not os.path.exists(DB_PATH):
+        print("No database found yet. Returning empty DataFrame.")
+        return pd.DataFrame()
+
+    conn = sqlite3.connect(DB_PATH)
+    # Extract only rows where feedback (ground truth) is not NULL
+    query = "SELECT * FROM transaction_logs WHERE actual_label IS NOT NULL"
+    df_logs = pd.read_sql_query(query, conn)
+    conn.close()
+
+    if df_logs.empty:
+        print("No ground-truth feedback logs available yet.")
+        return pd.DataFrame()
+
+    # Drop non-feature columns used for database tracking
+    df_features = df_logs.drop(
+        columns=[
+            "txn_id",
+            "timestamp",
+            "predicted_score",
+            "is_flagged",
+            "feedback_timestamp",
+        ]
+    )
+    df_features.rename(columns={"actual_label": "Class"}, inplace=True)
+    return df_features
+
+
+def execute_retraining_pipeline():
+    print("\n--- Phase 2: Starting Automated Retraining & Pre-Deployment Gate ---")
+
+    # 1. Load Baseline Training Data & Ground-Truth Logs
+    ref_df = pd.read_parquet(REFERENCE_DATA_PATH)
+    new_logs_df = fetch_feedback_logs_from_db()
+
+    if not new_logs_df.empty:
+        print(f"Combining {len(ref_df)} baseline samples with {len(new_logs_df)} new labeled logs.")
+        combined_df = pd.concat([ref_df, new_logs_df], ignore_index=True)
+    else:
+        print("No feedback logs found. Retraining solely on baseline dataset.")
+        combined_df = ref_df.copy()
+
+    X_retrain = combined_df.drop(columns=["Class"])
+    y_retrain = combined_df["Class"]
+
+    # 2. Fit Candidate Model (v2)
+    num_neg = (y_retrain == 0).sum()
+    num_pos = (y_retrain == 1).sum()
+    scale_pos_weight = num_neg / num_pos if num_pos > 0 else 1.0
+
+    print("Training candidate model (v2)...")
+    model_v2 = XGBClassifier(
+        n_estimators=200,
+        max_depth=5,
+        learning_rate=0.05,
+        scale_pos_weight=scale_pos_weight,
+        eval_metric="aucpr",
+        random_state=42,
+        n_jobs=-1,
+    )
+    model_v2.fit(X_retrain, y_retrain)
+
+    # 3. Load Holdout Test Set for Objective Gate Evaluation
+    holdout_df = pd.read_parquet(HOLDOUT_DATA_PATH)
+    X_holdout = holdout_df.drop(columns=["Class"])
+    y_holdout = holdout_df["Class"]
+
+    # Evaluate Candidate Model (v2) on Holdout
+    v2_probs = model_v2.predict_proba(X_holdout)[:, 1]
+    v2_pr_auc = average_precision_score(y_holdout, v2_probs)
+    v2_thresh, v2_prec, v2_rec = find_optimal_threshold(y_holdout, v2_probs)
+
+    print(f"\n[Candidate Model (v2) Holdout PR-AUC]: {v2_pr_auc:.4f}")
+
+    # 4. Evaluate Active Baseline Model (v1) on Holdout
+    active_model_path = ACTIVE_MODEL_PATH if os.path.exists(ACTIVE_MODEL_PATH) else V1_MODEL_PATH
+    model_v1 = joblib.load(active_model_path)
+    
+    v1_probs = model_v1.predict_proba(X_holdout)[:, 1]
+    v1_pr_auc = average_precision_score(y_holdout, v1_probs)
+
+    print(f"[Active Model (v1) Holdout PR-AUC]: {v1_pr_auc:.4f}")
+
+    # 5. Pre-Deployment Gate Logic (Circuit Breaker)
+    if v2_pr_auc > v1_pr_auc:
+        print("\nSUCCESS: Candidate model (v2) OUTPERFORMS active model (v1)!")
+        print("Promoting v2 to Production...")
+
+        # Save v2 as active model
+        joblib.dump(model_v2, ACTIVE_MODEL_PATH)
+
+        v2_metrics = {
+            "model_version": "v2_active",
+            "pr_auc": round(float(v2_pr_auc), 4),
+            "optimal_threshold": round(float(v2_thresh), 4),
+            "precision": round(float(v2_prec), 4),
+            "recall": round(float(v2_rec), 4),
+            "total_trained_samples": int(len(combined_df)),
+            "status": "DEPLOYED",
+        }
+
+        with open(ACTIVE_METRICS_PATH, "w") as f:
+            json.dump(v2_metrics, f, indent=4)
+
+        print(f"Active production model updated at {ACTIVE_MODEL_PATH}")
+        return True, v2_metrics
+    else:
+        print("\nREJECTED: Candidate model (v2) DID NOT surpass active model (v1).")
+        print("Circuit Breaker Triggered: Keeping active model v1 live in production.")
+        return False, {"status": "REJECTED", "v1_pr_auc": v1_pr_auc, "v2_pr_auc": v2_pr_auc}
+
+
+if __name__ == "__main__":
+    execute_retraining_pipeline()

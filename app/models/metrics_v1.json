@@ -1,0 +1,9 @@
+{
+    "model_version": "v1",
+    "pr_auc": 0.9824,
+    "optimal_threshold": 0.9978,
+    "precision": 0.9592,
+    "recall": 0.8198,
+    "train_samples": 199364,
+    "fraud_samples": 344
+}
