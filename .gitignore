@@ -22,7 +22,8 @@ app/models/metrics_active.json
 *.parquet
 *.csv
 data/raw/*
-data/processed/*
+data/processed/stream_pool.parquet
+data/processed/holdout_test.parquet
 !data/processed/.gitkeep
 
 # Local SQLite Database & Logs

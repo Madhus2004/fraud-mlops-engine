@@ -14,17 +14,18 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copy application code and entrypoint script
+# Copy application code, model artifacts, reference baseline, and entrypoint
 COPY app/ app/
 COPY src/ src/
 COPY monitoring/ monitoring/
+COPY data/processed/reference_baseline.parquet data/processed/reference_baseline.parquet
 COPY entrypoint.sh .
 
-# Create runtime directory shells
-RUN mkdir -p data/processed app/models
+# Ensure entrypoint script has Linux execution permissions
+RUN chmod +x entrypoint.sh
 
 # Expose Streamlit (8501) and FastAPI (8000)
 EXPOSE 8501 8000
 
-# Execute entrypoint script to launch both services
-CMD ["/bin/bash", "entrypoint.sh"]
+# Execute entrypoint script
+ENTRYPOINT ["/bin/bash", "entrypoint.sh"]
