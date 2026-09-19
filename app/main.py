@@ -5,7 +5,7 @@ import joblib
 import pandas as pd
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
-from src.db import init_db, log_prediction, log_feedback
+from src.db import init_db, log_predict, log_feedback
 
 # Paths
 V1_MODEL_PATH = "app/models/xgboost_v1.pkl"
@@ -100,7 +100,7 @@ def predict_fraud(payload: TransactionInput):
     is_flagged = prob >= threshold
 
     # 6. Log prediction to SQLite database
-    log_prediction(txn_id, data_dict, prob, is_flagged)
+    log_predict(txn_id, data_dict, prob, is_flagged)
 
     return {
         "txn_id": txn_id,
