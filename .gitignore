@@ -15,10 +15,10 @@ fraud-env/
 *.pkl
 *.joblib
 *.onnx
-app/models/*.pkl
+
 app/models/metrics_active.json
 # EXCEPTIONS: Allow baseline model for Render build
-!app/models/model_v1.pkl
+
 
 # Large Datasets & Parquet Files
 *.parquet
