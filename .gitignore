@@ -17,6 +17,8 @@ fraud-env/
 *.onnx
 app/models/*.pkl
 app/models/metrics_active.json
+# EXCEPTIONS: Allow baseline model for Render build
+!app/models/model_v1.pkl
 
 # Large Datasets & Parquet Files
 *.parquet
@@ -24,6 +26,8 @@ app/models/metrics_active.json
 data/raw/*
 data/processed/stream_pool.parquet
 data/processed/holdout_test.parquet
+# EXCEPTIONS: Allow reference baseline parquet for drift detection
+!data/processed/reference_baseline.parquet
 !data/processed/.gitkeep
 
 # Local SQLite Database & Logs
