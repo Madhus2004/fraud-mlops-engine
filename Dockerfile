@@ -5,6 +5,7 @@ WORKDIR /app
 # Install essential system build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    curl \
     && rm -rf /var/lib/apt-get/lists/*
 
 # Copy dependency definition
