@@ -2,8 +2,10 @@ import time
 import requests
 import pandas as pd
 import numpy as np
+import os
 
-API_URL = "http://127.0.0.1:8000"
+API_URL='https://fraud-mlops-engine.onrender.com'
+
 STREAM_DATA_PATH = "data/processed/stream_pool.parquet"
 
 def run_simulation(num_batches=5, batch_size=20, inject_drift=False):
