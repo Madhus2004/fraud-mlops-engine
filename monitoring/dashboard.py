@@ -7,7 +7,11 @@ import streamlit as st
 import plotly.express as px
 from scipy.stats import ks_2samp
 
+# ✅ NEW (strips quotes, backticks, markdown brackets, and whitespace):
+import re
 
+raw_url = os.getenv("FASTAPI_URL", "http://127.0.0.1:8000")
+FASTAPI_URL = re.sub(r"[\[\]\(\)\'\"]", "", raw_url).strip().rstrip("/")
 # ==========================================
 # PAGE CONFIGURATION & CONSTANTS
 # ==========================================

@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import roc_auc_score
 from src.db import init_db, log_predict, log_feedback
-from retrain import execute_retraining_pipeline
+from src.retrain import execute_retraining_pipeline
 
 # Paths
 V1_MODEL_PATH = "app/models/xgboost_v1.pkl"
