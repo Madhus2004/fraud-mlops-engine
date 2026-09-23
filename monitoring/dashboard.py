@@ -144,7 +144,7 @@ with tab3:
                 st.error(f"Could not connect to FastAPI retrain service: {e}")
 
 # ==========================================
-# TAB 4: TEST SINGLE PREDICTION (NEW)
+# TAB 4: TEST SINGLE PREDICTION
 # ==========================================
 with tab4:
     st.header("🧪 Single Transaction Risk Scorer")
@@ -192,22 +192,31 @@ with tab4:
             response = requests.post(f"{FASTAPI_URL}/predict", json=payload, timeout=5)
             
             if response.status_code == 200:
-                result = response.json()
-                st.success("✅ Real-Time Inference Complete!")
+                # 1. Store response in session_state to survive the rerun
+                st.session_state["last_prediction"] = response.json()
                 
-                # Display output cards
-                res_col1, res_col2, res_col3 = st.columns(3)
-                res_col1.metric("Transaction ID", f"{result['txn_id'][:8]}...")
-                res_col2.metric("Calculated Risk Score", f"{result['risk_score']:.4f}")
-                
-                flag_status = "🚨 FLAGGED FOR FRAUD" if result['is_flagged'] else "✅ APPROVED"
-                res_col3.metric("Decision Output", flag_status)
-
-                st.subheader("FastAPI Response JSON Payload")
-                st.json(result)
-                st.info("💡 This transaction has been logged to `fraud_logs.db`. Refresh Tab 1 to see it in the database table!")
+                # 2. Trigger instant rerun so Tab 1 loads the updated SQL table immediately
+                st.rerun()
             else:
                 st.error(f"API Error ({response.status_code}): {response.text}")
 
         except Exception as e:
             st.error(f"Failed to connect to internal FastAPI server at `{FASTAPI_URL}`: {e}")
+
+    # Render saved prediction output if available in session_state
+    if "last_prediction" in st.session_state:
+        result = st.session_state["last_prediction"]
+        
+        st.success("✅ Real-Time Inference Complete!")
+        
+        # Display output cards
+        res_col1, res_col2, res_col3 = st.columns(3)
+        res_col1.metric("Transaction ID", f"{result['txn_id'][:8]}...")
+        res_col2.metric("Calculated Risk Score", f"{result['risk_score']:.4f}")
+        
+        flag_status = "🚨 FLAGGED FOR FRAUD" if result['is_flagged'] else "✅ APPROVED"
+        res_col3.metric("Decision Output", flag_status)
+
+        st.subheader("FastAPI Response JSON Payload")
+        st.json(result)
+        st.info("💡 Transaction logged to `fraud_logs.db`. Check Tab 1 to view the updated table!")
