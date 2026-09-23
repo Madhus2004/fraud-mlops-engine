@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 import os
 
-API_URL='https://fraud-mlops-engine.onrender.com'
+API_URL='https://fraud-mlops-engine.onrender.com/predict'
 
 STREAM_DATA_PATH = "data/processed/stream_pool.parquet"
 
