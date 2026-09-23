@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import average_precision_score, precision_recall_curve
 from xgboost import XGBClassifier
+import gc
 
 # File Paths
 HOLDOUT_DATA_PATH = "data/processed/holdout_test.parquet"
@@ -81,7 +82,6 @@ def fetch_feedback_logs_from_db():
 
     return df_features
 
-
 def execute_retraining_pipeline():
     print("\n--- Phase 2: Starting Automated Retraining & Pre-Deployment Gate ---")
 
@@ -96,33 +96,50 @@ def execute_retraining_pipeline():
         print("No feedback logs found. Retraining solely on baseline dataset.")
         combined_df = ref_df.copy()
 
-    # Drop index artifacts if present
-    X_retrain = combined_df.drop(columns=["Class", "index", "Unnamed: 0"], errors="ignore")
-    y_retrain = combined_df["Class"].astype(int)
+    # Free raw temporary dataframes from memory
+    del ref_df, new_logs_df
+    gc.collect()
 
-    # 2. Fit Candidate Model (v2)
-    num_neg = (y_retrain == 0).sum()
-    num_pos = (y_retrain == 1).sum()
+    total_samples = len(combined_df)
+
+    # Downcast data types to float32/int8 to cut memory usage by 50%
+    X_retrain = combined_df.drop(columns=["Class", "index", "Unnamed: 0"], errors="ignore").astype("float32")
+    y_retrain = combined_df["Class"].astype("int8")
+
+    del combined_df
+    gc.collect()
+
+    # 2. Fit Candidate Model (v2) with Memory-Efficient Hyperparameters
+    num_neg = int((y_retrain == 0).sum())
+    num_pos = int((y_retrain == 1).sum())
     scale_pos_weight = num_neg / num_pos if num_pos > 0 else 1.0
 
     hyperparams = {
-        "n_estimators": 200,
-        "max_depth": 5,
+        "n_estimators": 60,            # Conservative tree count for 512MB RAM
+        "max_depth": 4,                # Bounded tree depth prevents large matrix allocations
         "learning_rate": 0.05,
         "scale_pos_weight": float(scale_pos_weight),
         "eval_metric": "aucpr",
         "random_state": 42,
-        "n_jobs": -1
+        "n_jobs": 1,                   # Single thread prevents memory duplication across workers
+        "tree_method": "hist"          # Histogram method drastically cuts training RAM
     }
 
     print("Training candidate model (v2)...")
     model_v2 = XGBClassifier(**hyperparams)
     model_v2.fit(X_retrain, y_retrain)
 
+    # Free training matrices
+    del X_retrain, y_retrain
+    gc.collect()
+
     # 3. Load Holdout Test Set for Objective Gate Evaluation
     holdout_df = pd.read_parquet(HOLDOUT_DATA_PATH)
-    X_holdout = holdout_df.drop(columns=["Class", "index", "Unnamed: 0"], errors="ignore")
-    y_holdout = holdout_df["Class"].astype(int)
+    X_holdout = holdout_df.drop(columns=["Class", "index", "Unnamed: 0"], errors="ignore").astype("float32")
+    y_holdout = holdout_df["Class"].astype("int8")
+
+    del holdout_df
+    gc.collect()
 
     # Evaluate Candidate Model (v2) on Holdout
     v2_probs = model_v2.predict_proba(X_holdout)[:, 1]
@@ -146,12 +163,15 @@ def execute_retraining_pipeline():
 
     print(f"[Active Model (v1) Holdout PR-AUC]: {v1_pr_auc:.4f}")
 
+    # Clean up holdout evaluation objects
+    del X_holdout, X_holdout_v1, y_holdout, v1_probs, v2_probs, model_v1
+    gc.collect()
+
     # 5. Pre-Deployment Gate Logic (Circuit Breaker)
     if v2_pr_auc > v1_pr_auc:
         print("\n✅ SUCCESS: Candidate model (v2) OUTPERFORMS active model (v1)!")
         print("Promoting v2 to Production...")
 
-        # Ensure directory exists
         os.makedirs("app/models", exist_ok=True)
 
         # OVERWRITE active model slot with candidate v2
@@ -164,16 +184,18 @@ def execute_retraining_pipeline():
             "optimal_threshold": round(v2_thresh, 4),
             "precision": round(v2_prec, 4),
             "recall": round(v2_rec, 4),
-            "total_trained_samples": int(len(combined_df)),
+            "total_trained_samples": int(total_samples),
             "hyperparameters": hyperparams,
             "status": "DEPLOYED",
         }
 
-        # Overwrite active metrics JSON
         with open(ACTIVE_METRICS_PATH, "w") as f:
             json.dump(v2_metrics, f, indent=4)
 
         print(f"Active production model updated at {ACTIVE_MODEL_PATH}")
+        
+        del model_v2
+        gc.collect()
         return True, v2_metrics
     else:
         print("\n❌ REJECTED: Candidate model (v2) DID NOT surpass active model (v1).")
@@ -185,6 +207,9 @@ def execute_retraining_pipeline():
             "v2_pr_auc": round(v2_pr_auc, 4),
             "action": "Active model retained"
         }
+        
+        del model_v2
+        gc.collect()
         return False, reject_summary
 
 

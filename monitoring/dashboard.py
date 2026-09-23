@@ -126,7 +126,6 @@ with tab2:
 
             except Exception as e:
                 st.error(f"Failed to execute drift test: {e}")
-
 # ==========================================
 # TAB 3: RETRAIN CIRCUIT BREAKER GATE
 # ==========================================
@@ -138,11 +137,12 @@ with tab3:
     )
 
     if st.button("🚀 Execute Retraining Workflow"):
-        with st.spinner("Training candidate v2 model and evaluating holdout PR-AUC..."):
+        with st.spinner("Executing candidate v2 training and holdout evaluation..."):
             try:
                 # Send HTTP POST request to FastAPI endpoint
                 response = requests.post(f"{FASTAPI_URL}/retrain", timeout=120)
                 
+                # Handles immediate synchronous completion
                 if response.status_code == 200:
                     data = response.json()
                     
@@ -160,12 +160,18 @@ with tab3:
                     # Expandable JSON payload details
                     with st.expander("📄 View Full Pipeline Execution Metrics"):
                         st.json(data)
+
+                # Handles asynchronous background task kickoff
+                elif response.status_code == 202:
+                    data = response.json()
+                    st.info(f"⚙️ {data.get('message', 'Retraining process initiated asynchronously in background.')}")
+                    
                 else:
                     st.error(f"Retrain API failed with status code {response.status_code}: {response.text}")
                     
             except Exception as e:
                 st.error(f"Failed to connect to FastAPI endpoint at {FASTAPI_URL}: {e}")
-
+                
 # ==========================================
 # TAB 4: TEST SINGLE PREDICTION
 # ==========================================

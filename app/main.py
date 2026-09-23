@@ -12,6 +12,10 @@ from sklearn.metrics import roc_auc_score
 from src.db import init_db, log_predict, log_feedback
 from src.retrain import execute_retraining_pipeline
 
+import gc
+from fastapi import FastAPI, HTTPException, status
+
+
 # Paths
 V1_MODEL_PATH = "app/models/xgboost_v1.pkl"
 ACTIVE_MODEL_PATH = "app/models/xgboost_active.pkl"
@@ -144,17 +148,14 @@ def receive_feedback(payload: FeedbackInput):
     }
 
 
-
-# ==========================================
-# 4. RETRAINING CIRCUIT BREAKER (Tab 3 Support)
-# ==========================================
 @app.post("/retrain")
 def retrain_model():
-    """Triggers candidate model retraining (XGBoost), evaluates against v1 gate, and persists artifacts."""
+    """Triggers candidate model retraining synchronously with strict RAM management."""
     try:
+        # Execute pipeline
         promoted, metrics = execute_retraining_pipeline()
-        
-        return {
+
+        response_payload = {
             "status": "SUCCESS" if metrics.get("status") == "DEPLOYED" else "REJECTED",
             "promoted": promoted,
             "candidate_model": "v2_XGBoostClassifier",
@@ -166,5 +167,14 @@ def retrain_model():
             "action": "Promoted v2 model to active production slot" if promoted else "Retained v1 model",
             "metrics": metrics
         }
+        
+        return response_payload
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Retraining pipeline failed: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail=f"Retraining pipeline failed: {str(e)}"
+        )
+    finally:
+        # Guarantee RAM release regardless of success or failure
+        gc.collect()
