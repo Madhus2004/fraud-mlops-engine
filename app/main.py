@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import roc_auc_score
 from src.db import init_db, log_predict, log_feedback
+from retrain import execute_retraining_pipeline
 
 # Paths
 V1_MODEL_PATH = "app/models/xgboost_v1.pkl"
@@ -143,54 +144,27 @@ def receive_feedback(payload: FeedbackInput):
     }
 
 
+
 # ==========================================
 # 4. RETRAINING CIRCUIT BREAKER (Tab 3 Support)
 # ==========================================
 @app.post("/retrain")
 def retrain_model():
-    """Triggers candidate model v2 training on accumulated DB logs and enforces promotion gate."""
-    if not os.path.exists(DB_PATH):
-        raise HTTPException(status_code=400, detail="Database file not found.")
-
+    """Triggers candidate model retraining (XGBoost), evaluates against v1 gate, and persists artifacts."""
     try:
-        conn = sqlite3.connect(DB_PATH)
-        df_logs = pd.read_sql_query("SELECT * FROM inference_logs", conn)
-        conn.close()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"DB Read Error: {str(e)}")
-
-    if df_logs.empty:
+        promoted, metrics = execute_retraining_pipeline()
+        
         return {
-            "status": "SKIPPED",
-            "message": "Cannot trigger retraining: SQLite inference log table is currently empty."
+            "status": "SUCCESS" if metrics.get("status") == "DEPLOYED" else "REJECTED",
+            "promoted": promoted,
+            "candidate_model": "v2_XGBoostClassifier",
+            "evaluated_samples": metrics.get("total_trained_samples", 0),
+            "v2_pr_auc_score": metrics.get("pr_auc", 0.0),
+            "v1_pr_auc_baseline": metrics.get("v1_pr_auc_baseline", 0.0),
+            "optimal_threshold": metrics.get("optimal_threshold", 0.5),
+            "promotion_gate": "PASSED" if promoted else "FAILED",
+            "action": "Promoted v2 model to active production slot" if promoted else "Retained v1 model",
+            "metrics": metrics
         }
-
-    # Extract JSON features into pandas DataFrame
-    features_list = [json.loads(row) for row in df_logs["features_json"]]
-    X = pd.DataFrame(features_list)
-    
-    # Check if ground-truth feedback labels exist; fallback to is_flagged if none exist yet
-    if "actual_label" in df_logs.columns and df_logs["actual_label"].notnull().sum() > 0:
-        y = df_logs["actual_label"].dropna().astype(int)
-        X = X.iloc[:len(y)]
-    else:
-        y = df_logs["is_flagged"].astype(int)
-
-    # Train Candidate Model v2 (RandomForest)
-    v2_model = RandomForestClassifier(n_estimators=50, random_state=42)
-    v2_model.fit(X, y)
-
-    # Evaluate Candidate Performance
-    v2_probs = v2_model.predict_proba(X)[:, 1]
-    v2_auc = float(roc_auc_score(y, v2_probs)) if len(set(y)) > 1 else 0.85
-
-    promotion_passed = v2_auc >= 0.80
-
-    return {
-        "status": "SUCCESS",
-        "candidate_model": "v2_RandomForestClassifier",
-        "evaluated_samples": len(X),
-        "v2_auc_score": round(v2_auc, 4),
-        "promotion_gate": "PASSED" if promotion_passed else "FAILED",
-        "action": "Promoted v2 model to production active slot" if promotion_passed else "Retained v1 model"
-    }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Retraining pipeline failed: {str(e)}")

@@ -45,30 +45,40 @@ def find_optimal_threshold(y_true, y_probs, min_recall=0.80):
 def fetch_feedback_logs_from_db():
     """Extracts inference logs from SQLite that have ground-truth feedback attached."""
     if not os.path.exists(DB_PATH):
-        print("No database found yet. Returning empty DataFrame.")
+        print("ℹ️ No database found yet. Returning empty DataFrame.")
         return pd.DataFrame()
 
-    conn = sqlite3.connect(DB_PATH)
-    # Extract only rows where feedback (ground truth) is not NULL
-    query = "SELECT * FROM transaction_logs WHERE actual_label IS NOT NULL"
-    df_logs = pd.read_sql_query(query, conn)
-    conn.close()
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        # Handle both possible table names gracefully
+        query = "SELECT * FROM inference_logs WHERE actual_label IS NOT NULL"
+        df_logs = pd.read_sql_query(query, conn)
+        conn.close()
+    except Exception:
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            query = "SELECT * FROM transaction_logs WHERE actual_label IS NOT NULL"
+            df_logs = pd.read_sql_query(query, conn)
+            conn.close()
+        except Exception as e:
+            print(f"⚠️ Could not read logs from SQLite: {e}")
+            return pd.DataFrame()
 
     if df_logs.empty:
-        print("No ground-truth feedback logs available yet.")
+        print("ℹ️ No ground-truth feedback logs available yet.")
         return pd.DataFrame()
 
-    # Drop non-feature columns used for database tracking
-    df_features = df_logs.drop(
-        columns=[
-            "txn_id",
-            "timestamp",
-            "predicted_score",
-            "is_flagged",
-            "feedback_timestamp",
-        ]
-    )
-    df_features.rename(columns={"actual_label": "Class"}, inplace=True)
+    # If features are stored as JSON string in 'features_json'
+    if "features_json" in df_logs.columns:
+        features_list = [json.loads(row) for row in df_logs["features_json"]]
+        df_features = pd.DataFrame(features_list)
+        df_features["Class"] = df_logs["actual_label"].values
+    else:
+        # Drop metadata columns if features are raw SQL columns
+        drop_cols = [c for c in ["txn_id", "timestamp", "predicted_score", "risk_score", "is_flagged", "feedback_timestamp"] if c in df_logs.columns]
+        df_features = df_logs.drop(columns=drop_cols)
+        df_features.rename(columns={"actual_label": "Class"}, inplace=True)
+
     return df_features
 
 
@@ -86,34 +96,37 @@ def execute_retraining_pipeline():
         print("No feedback logs found. Retraining solely on baseline dataset.")
         combined_df = ref_df.copy()
 
-    X_retrain = combined_df.drop(columns=["Class"])
-    y_retrain = combined_df["Class"]
+    # Drop index artifacts if present
+    X_retrain = combined_df.drop(columns=["Class", "index", "Unnamed: 0"], errors="ignore")
+    y_retrain = combined_df["Class"].astype(int)
 
     # 2. Fit Candidate Model (v2)
     num_neg = (y_retrain == 0).sum()
     num_pos = (y_retrain == 1).sum()
     scale_pos_weight = num_neg / num_pos if num_pos > 0 else 1.0
 
+    hyperparams = {
+        "n_estimators": 200,
+        "max_depth": 5,
+        "learning_rate": 0.05,
+        "scale_pos_weight": float(scale_pos_weight),
+        "eval_metric": "aucpr",
+        "random_state": 42,
+        "n_jobs": -1
+    }
+
     print("Training candidate model (v2)...")
-    model_v2 = XGBClassifier(
-        n_estimators=200,
-        max_depth=5,
-        learning_rate=0.05,
-        scale_pos_weight=scale_pos_weight,
-        eval_metric="aucpr",
-        random_state=42,
-        n_jobs=-1,
-    )
+    model_v2 = XGBClassifier(**hyperparams)
     model_v2.fit(X_retrain, y_retrain)
 
     # 3. Load Holdout Test Set for Objective Gate Evaluation
     holdout_df = pd.read_parquet(HOLDOUT_DATA_PATH)
-    X_holdout = holdout_df.drop(columns=["Class"])
-    y_holdout = holdout_df["Class"]
+    X_holdout = holdout_df.drop(columns=["Class", "index", "Unnamed: 0"], errors="ignore")
+    y_holdout = holdout_df["Class"].astype(int)
 
     # Evaluate Candidate Model (v2) on Holdout
     v2_probs = model_v2.predict_proba(X_holdout)[:, 1]
-    v2_pr_auc = average_precision_score(y_holdout, v2_probs)
+    v2_pr_auc = float(average_precision_score(y_holdout, v2_probs))
     v2_thresh, v2_prec, v2_rec = find_optimal_threshold(y_holdout, v2_probs)
 
     print(f"\n[Candidate Model (v2) Holdout PR-AUC]: {v2_pr_auc:.4f}")
@@ -122,38 +135,57 @@ def execute_retraining_pipeline():
     active_model_path = ACTIVE_MODEL_PATH if os.path.exists(ACTIVE_MODEL_PATH) else V1_MODEL_PATH
     model_v1 = joblib.load(active_model_path)
     
-    v1_probs = model_v1.predict_proba(X_holdout)[:, 1]
-    v1_pr_auc = average_precision_score(y_holdout, v1_probs)
+    # Align holdout columns to active model expectations
+    if hasattr(model_v1, "feature_names_in_"):
+        X_holdout_v1 = X_holdout[list(model_v1.feature_names_in_)]
+    else:
+        X_holdout_v1 = X_holdout
+
+    v1_probs = model_v1.predict_proba(X_holdout_v1)[:, 1]
+    v1_pr_auc = float(average_precision_score(y_holdout, v1_probs))
 
     print(f"[Active Model (v1) Holdout PR-AUC]: {v1_pr_auc:.4f}")
 
     # 5. Pre-Deployment Gate Logic (Circuit Breaker)
     if v2_pr_auc > v1_pr_auc:
-        print("\nSUCCESS: Candidate model (v2) OUTPERFORMS active model (v1)!")
+        print("\n✅ SUCCESS: Candidate model (v2) OUTPERFORMS active model (v1)!")
         print("Promoting v2 to Production...")
 
-        # Save v2 as active model
+        # Ensure directory exists
+        os.makedirs("app/models", exist_ok=True)
+
+        # OVERWRITE active model slot with candidate v2
         joblib.dump(model_v2, ACTIVE_MODEL_PATH)
 
         v2_metrics = {
             "model_version": "v2_active",
-            "pr_auc": round(float(v2_pr_auc), 4),
-            "optimal_threshold": round(float(v2_thresh), 4),
-            "precision": round(float(v2_prec), 4),
-            "recall": round(float(v2_rec), 4),
+            "pr_auc": round(v2_pr_auc, 4),
+            "v1_pr_auc_baseline": round(v1_pr_auc, 4),
+            "optimal_threshold": round(v2_thresh, 4),
+            "precision": round(v2_prec, 4),
+            "recall": round(v2_rec, 4),
             "total_trained_samples": int(len(combined_df)),
+            "hyperparameters": hyperparams,
             "status": "DEPLOYED",
         }
 
+        # Overwrite active metrics JSON
         with open(ACTIVE_METRICS_PATH, "w") as f:
             json.dump(v2_metrics, f, indent=4)
 
         print(f"Active production model updated at {ACTIVE_MODEL_PATH}")
         return True, v2_metrics
     else:
-        print("\nREJECTED: Candidate model (v2) DID NOT surpass active model (v1).")
-        print("Circuit Breaker Triggered: Keeping active model v1 live in production.")
-        return False, {"status": "REJECTED", "v1_pr_auc": v1_pr_auc, "v2_pr_auc": v2_pr_auc}
+        print("\n❌ REJECTED: Candidate model (v2) DID NOT surpass active model (v1).")
+        print("Circuit Breaker Triggered: Keeping active model live in production.")
+        
+        reject_summary = {
+            "status": "REJECTED",
+            "v1_pr_auc": round(v1_pr_auc, 4),
+            "v2_pr_auc": round(v2_pr_auc, 4),
+            "action": "Active model retained"
+        }
+        return False, reject_summary
 
 
 if __name__ == "__main__":
