@@ -7,6 +7,23 @@ import streamlit as st
 import plotly.express as px
 from scipy.stats import ks_2samp
 
+import os
+import re
+
+# Fetch environment variable or fallback to local
+raw_url = os.getenv("FASTAPI_URL", "http://127.0.0.1:8000")
+
+# Clean hidden markdown formatting, brackets, quotes, or trailing slashes
+clean_url = re.sub(r"[\[\]\(\)\'\"]", "", raw_url).strip().rstrip("/")
+
+# If raw_url was markdown like '[https://foo.com](https://foo.com)', extract pure http(s) URL
+url_match = re.search(r"https?://[^\s\)]+", raw_url)
+if url_match:
+    FASTAPI_URL = url_match.group(0).rstrip("/")
+else:
+    FASTAPI_URL = clean_url if clean_url.startswith("http") else "http://127.0.0.1:8000"
+
+
 # ==========================================
 # PAGE CONFIGURATION & CONSTANTS
 # ==========================================
@@ -126,22 +143,40 @@ with tab2:
 # TAB 3: RETRAIN CIRCUIT BREAKER GATE
 # ==========================================
 with tab3:
-    st.header("⚙️ Candidate Model Retraining & Evaluation Gate")
-    st.write("Triggers candidate model training on accumulated feedback logs and enforces pre-deployment performance promotion criteria.")
+    st.header("⚙️ Automated Model Retraining & Circuit Breaker")
+    st.write(
+        "Triggers candidate XGBoost (v2) model training on accumulated feedback logs "
+        "and enforces pre-deployment performance promotion criteria."
+    )
 
-    if st.button("Execute Retraining Workflow"):
-        with st.spinner("Retraining candidate model v2 on SQLite logs..."):
+    if st.button("🚀 Execute Retraining Workflow"):
+        with st.spinner("Training candidate v2 model and evaluating holdout PR-AUC..."):
             try:
-                # Trigger retraining script / endpoint
-                response = requests.post(f"{FASTAPI_URL}/retrain")
+                # Send HTTP POST request to FastAPI endpoint
+                response = requests.post(f"{FASTAPI_URL}/retrain", timeout=120)
+                
                 if response.status_code == 200:
-                    res = response.json()
-                    st.success(f"Retraining Complete! Pipeline Status: {res.get('status', 'SUCCESS')}")
-                    st.json(res)
+                    data = response.json()
+                    
+                    if data.get("promoted"):
+                        st.success("🎉 Candidate Model (v2) OUTPERFORMED Active Model (v1) & Was Promoted to Production!")
+                    else:
+                        st.warning("⚠️ Circuit Breaker Triggered: Candidate v2 did not beat active v1. Active model retained.")
+
+                    # Metric summary cards
+                    col1, col2, col3 = st.columns(3)
+                    col1.metric("Promotion Status", data.get("promotion_gate", "N/A"))
+                    col2.metric("Candidate PR-AUC", data.get("v2_pr_auc_score", 0.0))
+                    col3.metric("Optimal Threshold", data.get("optimal_threshold", 0.5))
+
+                    # Expandable JSON payload details
+                    with st.expander("📄 View Full Pipeline Execution Metrics"):
+                        st.json(data)
                 else:
-                    st.error(f"Retrain API call failed with status code {response.status_code}: {response.text}")
+                    st.error(f"Retrain API failed with status code {response.status_code}: {response.text}")
+                    
             except Exception as e:
-                st.error(f"Could not connect to FastAPI retrain service: {e}")
+                st.error(f"Failed to connect to FastAPI endpoint at {FASTAPI_URL}: {e}")
 
 # ==========================================
 # TAB 4: TEST SINGLE PREDICTION
