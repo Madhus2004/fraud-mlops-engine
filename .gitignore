@@ -34,7 +34,7 @@ data/processed/holdout_test.parquet
 *.db
 *.sqlite
 *.sqlite3
-fraud_logs.db
+
 
 # IDE & OS Configuration Files
 .vscode/

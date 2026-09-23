@@ -17,6 +17,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 # Copy application code, model artifacts, reference baseline, and entrypoint
 COPY app/ app/
+COPY fraud_logs.db .
 COPY src/ src/
 COPY monitoring/ monitoring/
 COPY data/processed/reference_baseline.parquet data/processed/reference_baseline.parquet
