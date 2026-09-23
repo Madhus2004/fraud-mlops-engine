@@ -7,22 +7,6 @@ import streamlit as st
 import plotly.express as px
 from scipy.stats import ks_2samp
 
-import os
-import re
-
-# Fetch environment variable or fallback to local
-raw_url = os.getenv("FASTAPI_URL", "http://127.0.0.1:8000")
-
-# Clean hidden markdown formatting, brackets, quotes, or trailing slashes
-clean_url = re.sub(r"[\[\]\(\)\'\"]", "", raw_url).strip().rstrip("/")
-
-# If raw_url was markdown like '[https://foo.com](https://foo.com)', extract pure http(s) URL
-url_match = re.search(r"https?://[^\s\)]+", raw_url)
-if url_match:
-    FASTAPI_URL = url_match.group(0).rstrip("/")
-else:
-    FASTAPI_URL = clean_url if clean_url.startswith("http") else "http://127.0.0.1:8000"
-
 
 # ==========================================
 # PAGE CONFIGURATION & CONSTANTS
