@@ -73,7 +73,7 @@ with tab1:
         col_metrics3.metric("Labeled Chargebacks", f"{labeled_txns:,}")
 
         st.subheader("Raw SQLite Ingestion Table")
-        st.dataframe(df_logs, use_container_width=True)
+        st.dataframe(df_logs, width="stretch")
     else:
         st.warning("No records found in `fraud_logs.db`. Run `simulator.py` or use Tab 4 to generate test traffic.")
 
@@ -112,7 +112,7 @@ with tab2:
                     })
 
                 df_drift = pd.DataFrame(drift_results)
-                st.dataframe(df_drift, use_container_width=True)
+                st.dataframe(df_drift, width="stretch")
 
                 drift_count = sum(1 for r in drift_results if "🚨" in r["Drift Alert"])
                 if drift_count > 0:
