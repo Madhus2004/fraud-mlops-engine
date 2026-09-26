@@ -7,7 +7,18 @@ import streamlit as st
 import plotly.express as px
 from scipy.stats import ks_2samp
 
-
+# ==========================================
+# PROXY PUBLIC EXPORT CALLS TO FASTAPI
+# ==========================================
+if st.query_params.get("export") == "true":
+    try:
+        # Request raw JSON from local internal FastAPI instance
+        resp = requests.get("http://127.0.0.1:8000/export-logs", timeout=5)
+        st.write(resp.text)
+        st.stop()
+    except Exception as e:
+        st.write("[]")
+        st.stop()
 # ==========================================
 # DIRECT RAW JSON EXPORTER FOR WORKER
 # ==========================================

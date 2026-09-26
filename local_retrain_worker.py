@@ -30,7 +30,7 @@ import pandas as pd
 
 def sync_cloud_logs():
     base_url = CLOUD_APP_URL.rstrip('/')
-    endpoint = f"{base_url}/?export_json=true"
+    endpoint = f"{base_url}/?export=true"
     
     print(f"\n[1/5] Syncing logs from live app ({endpoint})...")
     try:
@@ -40,16 +40,19 @@ def sync_cloud_logs():
             print(f"⚠️ Render HTTP {res.status_code}. Retry in next cycle...")
             return 0
 
-        # Try parsing as direct JSON first
-        try:
-            logs = res.json()
-        except ValueError:
-            # If wrapped in Streamlit HTML, extract JSON array matching [...] using regex
-            match = re.search(r'(\[\s*\{.*\}\s*\])', res.text, re.DOTALL)
+        # Parse output
+        raw_text = res.text.strip()
+        
+        # Handle cases where response text contains JSON
+        if raw_text.startswith("[") or raw_text.startswith("{"):
+            logs = json.loads(raw_text)
+        else:
+            # Fallback regex extraction if wrapped in Streamlit text containers
+            match = re.search(r'(\[\s*\{.*\}\s*\])', raw_text, re.DOTALL)
             if match:
                 logs = json.loads(match.group(1))
             else:
-                print("⚠️ Could not extract JSON array from response.")
+                print("⚠️ Render is warming up or empty array returned.")
                 return 0
 
         if not logs:
