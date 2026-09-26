@@ -3,7 +3,7 @@
 # 1. Initialize DB schema
 python src/db.py
 
-# 2. Start FastAPI in the background
+# 2. Start FastAPI in the background (internal only, fine to hardcode 8000)
 echo "Starting FastAPI server on port 8000..."
 uvicorn app.main:app --host 0.0.0.0 --port 8000 &
 
@@ -18,6 +18,7 @@ for i in {1..15}; do
   sleep 1
 done
 
-# 4. Start Streamlit in the foreground
-echo "Starting Streamlit dashboard on port 8501..."
-streamlit run monitoring/dashboard.py --server.port=8501 --server.address=0.0.0.0
+# 4. Start Streamlit in the foreground, bound to Render's assigned $PORT
+PORT="${PORT:-8501}"
+echo "Starting Streamlit dashboard on port ${PORT}..."
+streamlit run monitoring/dashboard.py --server.port="${PORT}" --server.address=0.0.0.0
