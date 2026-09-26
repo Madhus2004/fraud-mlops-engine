@@ -23,14 +23,29 @@ LOG_THRESHOLD_FOR_RETRAIN = 100  # Trigger retraining every 100 new records
 
 
 def sync_cloud_logs():
-    """Fetch new inference logs from the live cloud FastAPI app and sync locally."""
-    print(f"\n[1/5] Syncing logs from live app ({CLOUD_APP_URL}/export-logs)...")
+    # Ensure URL doesn't have trailing slash issues
+    base_url = CLOUD_APP_URL.rstrip('/')
+    endpoint = f"{base_url}/export-logs"
+    
+    print(f"\n[1/5] Syncing logs from live app ({endpoint})...")
     try:
-        res = requests.get(f"{CLOUD_APP_URL}/export-logs", timeout=10)
-        if res.status_code != 200:
-            print(f"❌ Failed to fetch logs: {res.status_code} - {res.text}")
-            return 0
+        # allow_redirects=True handles Render 301/302 redirects automatically
+        res = requests.get(endpoint, timeout=30, allow_redirects=True)
         
+        # 1. Check if Render server returned a 200 OK status
+        if res.status_code != 200:
+            print(f"⚠️ Render HTTP {res.status_code}. Server may be sleeping/building. Will retry next cycle...")
+            return 0
+            
+        # 2. Verify that the response is actually JSON and not an HTML web page
+        content_type = res.headers.get("Content-Type", "")
+        if "application/json" not in content_type:
+            print(f"⚠️ Received non-JSON response from Render ({content_type}).")
+            print(f"   Preview of response: {res.text[:120]}...")
+            print("   💡 If Render was asleep, it is now waking up. Next poll cycle should succeed.")
+            return 0
+
+        # 3. Parse JSON safely
         logs = res.json()
         if not logs:
             print("ℹ️ No logs found on cloud app.")
@@ -44,8 +59,9 @@ def sync_cloud_logs():
         
         print(f"✅ Successfully synced {len(df_new)} total logs into `{LOCAL_DB_PATH}`.")
         return len(df_new)
-    except Exception as e:
-        print(f"❌ Error syncing logs: {e}")
+        
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Connection error (Render unreachable or starting up): {e}")
         return 0
 
 

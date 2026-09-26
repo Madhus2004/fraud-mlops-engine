@@ -7,6 +7,29 @@ import streamlit as st
 import plotly.express as px
 from scipy.stats import ks_2samp
 
+
+# ==========================================
+# CATCH /export-logs HTTP ROUTE DIRECTLY
+# ==========================================
+query_params = st.query_params
+
+if "export-logs" in query_params or st.query_params.get("path") == "export-logs":
+    DB_PATH = os.getenv("DB_PATH", "fraud_logs.db")
+    if os.path.exists(DB_PATH):
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            df = pd.read_sql_query("SELECT * FROM inference_logs", conn)
+            conn.close()
+            # Return raw JSON directly to the caller
+            st.json(df.to_dict(orient="records"))
+            st.stop()
+        except Exception as e:
+            st.error(f"Error reading DB: {e}")
+            st.stop()
+    else:
+        st.json([])
+        st.stop()
+
 # ✅ NEW (strips quotes, backticks, markdown brackets, and whitespace):
 import re
 
