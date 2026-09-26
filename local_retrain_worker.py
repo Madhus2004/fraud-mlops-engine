@@ -11,7 +11,7 @@ from xgboost import XGBClassifier
 from sklearn.metrics import average_precision_score, precision_recall_curve
 
 # Configuration
-CLOUD_APP_URL = os.getenv("CLOUD_APP_URL", "https://fraud-mlops-engine.onrender.com")  # Replace with HF/Render URL
+CLOUD_APP_URL = os.getenv("CLOUD_APP_URL", "https://fraud-mlops-engine.onrender.com")
 LOCAL_DB_PATH = "local_fraud_logs.db"
 BASELINE_PATH = "data/processed/reference_baseline.parquet"
 HOLDOUT_PATH = "data/processed/holdout_test.parquet"
@@ -19,39 +19,44 @@ ACTIVE_MODEL_PATH = "app/models/xgboost_active.pkl"
 V1_MODEL_PATH = "app/models/xgboost_v1.pkl"
 ACTIVE_METRICS_PATH = "app/models/metrics_active.json"
 
-LOG_THRESHOLD_FOR_RETRAIN = 100  # Trigger retraining every 100 new records
+LOG_THRESHOLD_FOR_RETRAIN = 5  # Trigger retraining every 100 new records
 
+
+import re
+import json
+import requests
+import sqlite3
+import pandas as pd
 
 def sync_cloud_logs():
-    # Ensure URL doesn't have trailing slash issues
     base_url = CLOUD_APP_URL.rstrip('/')
-    endpoint = f"{base_url}/export-logs"
+    endpoint = f"{base_url}/?export_json=true"
     
     print(f"\n[1/5] Syncing logs from live app ({endpoint})...")
     try:
-        # allow_redirects=True handles Render 301/302 redirects automatically
-        res = requests.get(endpoint, timeout=30, allow_redirects=True)
+        res = requests.get(endpoint, timeout=30)
         
-        # 1. Check if Render server returned a 200 OK status
         if res.status_code != 200:
-            print(f"⚠️ Render HTTP {res.status_code}. Server may be sleeping/building. Will retry next cycle...")
-            return 0
-            
-        # 2. Verify that the response is actually JSON and not an HTML web page
-        content_type = res.headers.get("Content-Type", "")
-        if "application/json" not in content_type:
-            print(f"⚠️ Received non-JSON response from Render ({content_type}).")
-            print(f"   Preview of response: {res.text[:120]}...")
-            print("   💡 If Render was asleep, it is now waking up. Next poll cycle should succeed.")
+            print(f"⚠️ Render HTTP {res.status_code}. Retry in next cycle...")
             return 0
 
-        # 3. Parse JSON safely
-        logs = res.json()
+        # Try parsing as direct JSON first
+        try:
+            logs = res.json()
+        except ValueError:
+            # If wrapped in Streamlit HTML, extract JSON array matching [...] using regex
+            match = re.search(r'(\[\s*\{.*\}\s*\])', res.text, re.DOTALL)
+            if match:
+                logs = json.loads(match.group(1))
+            else:
+                print("⚠️ Could not extract JSON array from response.")
+                return 0
+
         if not logs:
             print("ℹ️ No logs found on cloud app.")
             return 0
 
-        # Save to local SQLite database
+        # Save synced logs to local SQLite database
         conn = sqlite3.connect(LOCAL_DB_PATH)
         df_new = pd.DataFrame(logs)
         df_new.to_sql("inference_logs", conn, if_exists="replace", index=False)
@@ -60,8 +65,8 @@ def sync_cloud_logs():
         print(f"✅ Successfully synced {len(df_new)} total logs into `{LOCAL_DB_PATH}`.")
         return len(df_new)
         
-    except requests.exceptions.RequestException as e:
-        print(f"❌ Connection error (Render unreachable or starting up): {e}")
+    except Exception as e:
+        print(f"❌ Connection error: {e}")
         return 0
 
 

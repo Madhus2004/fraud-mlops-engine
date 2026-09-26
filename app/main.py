@@ -151,8 +151,10 @@ def receive_feedback(payload: FeedbackInput):
 # ==========================================
 # EXPORT LOGS ENDPOINT (For Local Worker)
 # ==========================================
+# Add this endpoint directly in app/main.py
 @app.get("/export-logs")
 def export_inference_logs():
+    """Exports raw SQLite logs as JSON for the local retraining worker."""
     if not os.path.exists(DB_PATH):
         return []
     
@@ -160,6 +162,8 @@ def export_inference_logs():
         conn = sqlite3.connect(DB_PATH)
         df_logs = pd.read_sql_query("SELECT * FROM inference_logs", conn)
         conn.close()
+        
+        # Return pure JSON list of dictionaries
         return df_logs.to_dict(orient="records")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to export logs: {str(e)}")

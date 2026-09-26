@@ -9,25 +9,24 @@ from scipy.stats import ks_2samp
 
 
 # ==========================================
-# CATCH /export-logs HTTP ROUTE DIRECTLY
+# DIRECT RAW JSON EXPORTER FOR WORKER
 # ==========================================
-query_params = st.query_params
-
-if "export-logs" in query_params or st.query_params.get("path") == "export-logs":
+if st.query_params.get("export_json") == "true":
     DB_PATH = os.getenv("DB_PATH", "fraud_logs.db")
     if os.path.exists(DB_PATH):
         try:
             conn = sqlite3.connect(DB_PATH)
             df = pd.read_sql_query("SELECT * FROM inference_logs", conn)
             conn.close()
-            # Return raw JSON directly to the caller
-            st.json(df.to_dict(orient="records"))
+            # Write raw JSON to stdout/response stream and stop Streamlit rendering
+            raw_json = json.dumps(df.to_dict(orient="records"))
+            st.write(raw_json)
             st.stop()
         except Exception as e:
-            st.error(f"Error reading DB: {e}")
+            st.write("[]")
             st.stop()
     else:
-        st.json([])
+        st.write("[]")
         st.stop()
 
 # ✅ NEW (strips quotes, backticks, markdown brackets, and whitespace):
