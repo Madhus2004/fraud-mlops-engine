@@ -1,5 +1,13 @@
-import json
 import os
+
+# Limit thread allocations to prevent RAM duplication across CPU cores
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+
+import json
 import sqlite3
 import joblib
 import numpy as np
@@ -9,15 +17,15 @@ from xgboost import XGBClassifier
 import gc
 
 # File Paths
-HOLDOUT_DATA_PATH = "data/processed/holdout_test.parquet"
-REFERENCE_DATA_PATH = "data/processed/reference_baseline.parquet"
-DB_PATH = "fraud_logs.db"
+HOLDOUT_DATA_PATH = os.getenv("HOLDOUT_DATA_PATH", "data/processed/holdout_test.parquet")
+REFERENCE_DATA_PATH = os.getenv("REFERENCE_DATA_PATH", "data/processed/reference_baseline.parquet")
+DB_PATH = os.getenv("DB_PATH", "fraud_logs.db")
 
-V1_MODEL_PATH = "app/models/xgboost_v1.pkl"
-V1_METRICS_PATH = "app/models/metrics_v1.json"
+V1_MODEL_PATH = os.getenv("V1_MODEL_PATH", "app/models/xgboost_v1.pkl")
+V1_METRICS_PATH = os.getenv("V1_METRICS_PATH", "app/models/metrics_v1.json")
 
-ACTIVE_MODEL_PATH = "app/models/xgboost_active.pkl"
-ACTIVE_METRICS_PATH = "app/models/metrics_active.json"
+ACTIVE_MODEL_PATH = os.getenv("ACTIVE_MODEL_PATH", "app/models/xgboost_active.pkl")
+ACTIVE_METRICS_PATH = os.getenv("ACTIVE_METRICS_PATH", "app/models/metrics_active.json")
 
 
 def find_optimal_threshold(y_true, y_probs, min_recall=0.80):
@@ -51,7 +59,6 @@ def fetch_feedback_logs_from_db():
 
     try:
         conn = sqlite3.connect(DB_PATH)
-        # Handle both possible table names gracefully
         query = "SELECT * FROM inference_logs WHERE actual_label IS NOT NULL"
         df_logs = pd.read_sql_query(query, conn)
         conn.close()
@@ -69,18 +76,17 @@ def fetch_feedback_logs_from_db():
         print("ℹ️ No ground-truth feedback logs available yet.")
         return pd.DataFrame()
 
-    # If features are stored as JSON string in 'features_json'
     if "features_json" in df_logs.columns:
         features_list = [json.loads(row) for row in df_logs["features_json"]]
         df_features = pd.DataFrame(features_list)
         df_features["Class"] = df_logs["actual_label"].values
     else:
-        # Drop metadata columns if features are raw SQL columns
         drop_cols = [c for c in ["txn_id", "timestamp", "predicted_score", "risk_score", "is_flagged", "feedback_timestamp"] if c in df_logs.columns]
         df_features = df_logs.drop(columns=drop_cols)
         df_features.rename(columns={"actual_label": "Class"}, inplace=True)
 
     return df_features
+
 
 def execute_retraining_pipeline():
     print("\n--- Phase 2: Starting Automated Retraining & Pre-Deployment Gate ---")
@@ -96,16 +102,23 @@ def execute_retraining_pipeline():
         print("No feedback logs found. Retraining solely on baseline dataset.")
         combined_df = ref_df.copy()
 
-    # Free raw temporary dataframes from memory
     del ref_df, new_logs_df
     gc.collect()
 
+    MAX_SAMPLES = 20000
+
+    if len(combined_df) > MAX_SAMPLES:
+        print(f"Subsampling dataset from {len(combined_df)} to {MAX_SAMPLES} to enforce RAM budget...")
+        combined_df = combined_df.sample(n=MAX_SAMPLES, random_state=42).reset_index(drop=True)
+
+    # Store total_samples before dropping combined_df
     total_samples = len(combined_df)
 
-    # Downcast data types to float32/int8 to cut memory usage by 50%
+    # Downcast types immediately
     X_retrain = combined_df.drop(columns=["Class", "index", "Unnamed: 0"], errors="ignore").astype("float32")
     y_retrain = combined_df["Class"].astype("int8")
-
+    
+    # Free raw temporary dataframe from memory
     del combined_df
     gc.collect()
 
@@ -152,7 +165,6 @@ def execute_retraining_pipeline():
     active_model_path = ACTIVE_MODEL_PATH if os.path.exists(ACTIVE_MODEL_PATH) else V1_MODEL_PATH
     model_v1 = joblib.load(active_model_path)
     
-    # Align holdout columns to active model expectations
     if hasattr(model_v1, "feature_names_in_"):
         X_holdout_v1 = X_holdout[list(model_v1.feature_names_in_)]
     else:
@@ -174,7 +186,6 @@ def execute_retraining_pipeline():
 
         os.makedirs("app/models", exist_ok=True)
 
-        # OVERWRITE active model slot with candidate v2
         joblib.dump(model_v2, ACTIVE_MODEL_PATH)
 
         v2_metrics = {

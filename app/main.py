@@ -148,33 +148,25 @@ def receive_feedback(payload: FeedbackInput):
     }
 
 
-@app.post("/retrain")
-def retrain_model():
-    """Triggers candidate model retraining synchronously with strict RAM management."""
+# ==========================================
+# EXPORT LOGS ENDPOINT (For Local Worker)
+# ==========================================
+@app.get("/export-logs")
+def export_inference_logs():
+    """Exports SQLite inference logs so the local retraining worker can pull new data."""
+    if not os.path.exists(DB_PATH):
+        return []
+    
     try:
-        # Execute pipeline
-        promoted, metrics = execute_retraining_pipeline()
-
-        response_payload = {
-            "status": "SUCCESS" if metrics.get("status") == "DEPLOYED" else "REJECTED",
-            "promoted": promoted,
-            "candidate_model": "v2_XGBoostClassifier",
-            "evaluated_samples": metrics.get("total_trained_samples", 0),
-            "v2_pr_auc_score": metrics.get("pr_auc", 0.0),
-            "v1_pr_auc_baseline": metrics.get("v1_pr_auc_baseline", 0.0),
-            "optimal_threshold": metrics.get("optimal_threshold", 0.5),
-            "promotion_gate": "PASSED" if promoted else "FAILED",
-            "action": "Promoted v2 model to active production slot" if promoted else "Retained v1 model",
-            "metrics": metrics
-        }
+        conn = sqlite3.connect(DB_PATH)
+        df_logs = pd.read_sql_query("SELECT * FROM inference_logs", conn)
+        conn.close()
         
-        return response_payload
-
+        # Parse features_json back into dictionary
+        records = df_logs.to_dict(orient="records")
+        for rec in records:
+            if "features_json" in rec and isinstance(rec["features_json"], str):
+                rec["features"] = json.loads(rec["features_json"])
+        return records
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
-            detail=f"Retraining pipeline failed: {str(e)}"
-        )
-    finally:
-        # Guarantee RAM release regardless of success or failure
-        gc.collect()
+        raise HTTPException(status_code=500, detail=f"Failed to export logs: {str(e)}")

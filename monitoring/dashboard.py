@@ -131,47 +131,21 @@ with tab2:
 # ==========================================
 with tab3:
     st.header("⚙️ Automated Model Retraining & Circuit Breaker")
-    st.write(
-        "Triggers candidate XGBoost (v2) model training on accumulated feedback logs "
-        "and enforces pre-deployment performance promotion criteria."
+    st.info(
+        "💡 **Decoupled Architecture**: Online serving (FastAPI/Hugging Face) is decoupled from heavy XGBoost model training to optimize cloud memory usage.\n\n"
+        "The local offline worker (`local_retrain_worker.py`) periodically monitors live production logs, executes Kolmogorov-Smirnov feature drift checks, and runs holdout PR-AUC evaluations before promoting new models."
     )
-
-    if st.button("🚀 Execute Retraining Workflow"):
-        with st.spinner("Executing candidate v2 training and holdout evaluation..."):
-            try:
-                # Send HTTP POST request to FastAPI endpoint
-                response = requests.post(f"{FASTAPI_URL}/retrain", timeout=120)
-                
-                # Handles immediate synchronous completion
-                if response.status_code == 200:
-                    data = response.json()
-                    
-                    if data.get("promoted"):
-                        st.success("🎉 Candidate Model (v2) OUTPERFORMED Active Model (v1) & Was Promoted to Production!")
-                    else:
-                        st.warning("⚠️ Circuit Breaker Triggered: Candidate v2 did not beat active v1. Active model retained.")
-
-                    # Metric summary cards
-                    col1, col2, col3 = st.columns(3)
-                    col1.metric("Promotion Status", data.get("promotion_gate", "N/A"))
-                    col2.metric("Candidate PR-AUC", data.get("v2_pr_auc_score", 0.0))
-                    col3.metric("Optimal Threshold", data.get("optimal_threshold", 0.5))
-
-                    # Expandable JSON payload details
-                    with st.expander("📄 View Full Pipeline Execution Metrics"):
-                        st.json(data)
-
-                # Handles asynchronous background task kickoff
-                elif response.status_code == 202:
-                    data = response.json()
-                    st.info(f"⚙️ {data.get('message', 'Retraining process initiated asynchronously in background.')}")
-                    
-                else:
-                    st.error(f"Retrain API failed with status code {response.status_code}: {response.text}")
-                    
-            except Exception as e:
-                st.error(f"Failed to connect to FastAPI endpoint at {FASTAPI_URL}: {e}")
-                
+    
+    # Display active model version metadata
+    try:
+        response = requests.get(f"{FASTAPI_URL}/health", timeout=5)
+        if response.status_code == 200:
+            health_data = response.json()
+            col1, col2 = st.columns(2)
+            col1.metric("Active Model Version", health_data.get("active_model_version", "v1"))
+            col2.metric("Active Decision Threshold", health_data.get("decision_threshold", 0.5))
+    except Exception as e:
+        st.warning(f"Could not connect to FastAPI health check: {e}")
 # ==========================================
 # TAB 4: TEST SINGLE PREDICTION
 # ==========================================
