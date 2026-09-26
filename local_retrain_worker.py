@@ -11,7 +11,7 @@ from xgboost import XGBClassifier
 from sklearn.metrics import average_precision_score, precision_recall_curve
 
 # Configuration
-CLOUD_APP_URL = os.getenv("CLOUD_APP_URL", "https://your-app.hf.space")  # Replace with HF/Render URL
+CLOUD_APP_URL = os.getenv("CLOUD_APP_URL", "https://fraud-mlops-engine.onrender.com")  # Replace with HF/Render URL
 LOCAL_DB_PATH = "local_fraud_logs.db"
 BASELINE_PATH = "data/processed/reference_baseline.parquet"
 HOLDOUT_PATH = "data/processed/holdout_test.parquet"

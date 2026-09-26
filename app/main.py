@@ -153,7 +153,6 @@ def receive_feedback(payload: FeedbackInput):
 # ==========================================
 @app.get("/export-logs")
 def export_inference_logs():
-    """Exports SQLite inference logs so the local retraining worker can pull new data."""
     if not os.path.exists(DB_PATH):
         return []
     
@@ -161,12 +160,6 @@ def export_inference_logs():
         conn = sqlite3.connect(DB_PATH)
         df_logs = pd.read_sql_query("SELECT * FROM inference_logs", conn)
         conn.close()
-        
-        # Parse features_json back into dictionary
-        records = df_logs.to_dict(orient="records")
-        for rec in records:
-            if "features_json" in rec and isinstance(rec["features_json"], str):
-                rec["features"] = json.loads(rec["features_json"])
-        return records
+        return df_logs.to_dict(orient="records")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to export logs: {str(e)}")
