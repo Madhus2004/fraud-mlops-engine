@@ -26,9 +26,9 @@ _engine = None
 def get_engine():
     global _engine
     if _engine is None:
+        import re
         url = os.getenv("DATABASE_URL", "sqlite:///fraud_logs.db")
-        if url.startswith("postgres://"):
-            url = url.replace("postgres://", "postgresql://", 1)
+        url = re.sub(r"^postgres(ql)?(\+\w+)?://", "postgresql+psycopg2://", url)
         kwargs = {"pool_pre_ping": True}
         if not url.startswith("sqlite"):
             kwargs.update(pool_size=2, max_overflow=2, pool_recycle=300)
