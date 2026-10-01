@@ -2,6 +2,7 @@ import pandas as pd
 import requests
 import time
 import os
+
 API_URL = "http://127.0.0.1:8000/predict"
 
 STREAM_DATA_PATH = "data/processed/stream_pool.parquet"

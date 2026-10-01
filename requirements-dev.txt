@@ -1,0 +1,4 @@
+-r requirements-training.txt
+pytest>=8
+httpx>=0.27
+ruff>=0.4

@@ -1,43 +1,15 @@
-# Byte-compiled / optimized / DLL files
 __pycache__/
-*.py[cod]
-*$py.class
-.pytest_cache/
-
-# Virtual Environments
-venv/
-env/
-ENV/
-fraud-env/
-.venv/
-
-# Machine Learning Artifacts & Models
-*.pkl
-*.joblib
-*.onnx
-
-app/models/metrics_active.json
-# EXCEPTIONS: Allow baseline model for Render build
-
-
-# Large Datasets & Parquet Files
-*.parquet
-*.csv
-data/raw/*
-data/processed/stream_pool.parquet
-data/processed/holdout_test.parquet
-# EXCEPTIONS: Allow reference baseline parquet for drift detection
-!data/processed/reference_baseline.parquet
-!data/processed/.gitkeep
-
-# Local SQLite Database & Logs
+*.pyc
+.env
+data/raw/
+data/processed/
+mlruns/
+mlflow.db
+mlartifacts/
+reports/
 *.db
-*.sqlite
-*.sqlite3
-
-
-# IDE & OS Configuration Files
-.vscode/
-.idea/
-.DS_Store
-*.log
+artifacts/versions/
+artifacts/cache/
+artifacts/active/*
+!artifacts/.gitkeep
+.pytest_cache/

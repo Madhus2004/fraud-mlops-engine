@@ -1,33 +1,13 @@
-FROM python:3.10-slim
-
+FROM python:3.11-slim
+ENV PYTHONUNBUFFERED=1 PYTHONPATH=/app OMP_NUM_THREADS=1
 WORKDIR /app
-
-# Install essential system build dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    curl \
-    && rm -rf /var/lib/apt-get/lists/*
-
-# Copy dependency definition
-COPY requirements.txt .
-
-# Install dependencies
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
-
-# Copy application code, model artifacts, reference baseline, and entrypoint
-COPY app/ app/
-COPY fraud_logs.db .
-COPY src/ src/
-COPY monitoring/ monitoring/
-COPY data/processed/reference_baseline.parquet data/processed/reference_baseline.parquet
-COPY entrypoint.sh .
-
-# Ensure entrypoint script has Linux execution permissions
-RUN chmod +x entrypoint.sh
-
-# Expose Streamlit (8501) and FastAPI (8000)
-EXPOSE 8501 8000
-
-# Execute entrypoint script
-ENTRYPOINT ["/bin/bash", "entrypoint.sh"]
+RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+COPY requirements-serving.txt .
+RUN pip install --no-cache-dir -r requirements-serving.txt
+COPY core ./core
+COPY serving ./serving
+# Optional: bundle a fallback model. Preferred: set HF_REPO_ID so the API pulls the champion at startup.
+COPY artifacts ./artifacts
+EXPOSE 8501
+CMD ["bash", "serving/entrypoint.sh"]

@@ -1,0 +1,8 @@
+data
+mlruns
+reports
+artifacts/versions
+artifacts/cache
+tests
+.git
+*.db
