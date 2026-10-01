@@ -2,7 +2,8 @@
 
 A real-time credit card fraud scoring system with drift monitoring, feedback-driven retraining, and a safe model promotion gate.
 
-<img width="747" height="396" alt="image" src="https://github.com/user-attachments/assets/510e8672-1bff-4ce5-9cd8-5aa932c89751" />
+<img width="1042" height="622" alt="image" src="https://github.com/user-attachments/assets/2a9a3c91-cacd-4886-a1b5-d6c8d910ca6c" />
+
 
 
 ## What it does
