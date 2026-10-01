@@ -3,6 +3,7 @@
   python -m ops.simulator --batches 5 --batch-size 40
   python -m ops.simulator --drift             # inject covariate drift
 """
+import core
 import argparse
 import os
 import random
