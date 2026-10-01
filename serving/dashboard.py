@@ -3,7 +3,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import os
-
+import json
 import pandas as pd
 import plotly.express as px
 import requests
@@ -119,4 +119,4 @@ with tab_logs:
         if len(df):
             pick = st.selectbox("Inspect a transaction's raw features", df["txn_id"].tolist())
             row = df[df["txn_id"] == pick].iloc[0]
-            st.json(pd.read_json(row["features_json"], typ="series").to_dict())
+            st.json(json.loads(row["features_json"]))
