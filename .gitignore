@@ -13,3 +13,4 @@ artifacts/cache/
 artifacts/active/*
 !artifacts/.gitkeep
 .pytest_cache/
+guide.md

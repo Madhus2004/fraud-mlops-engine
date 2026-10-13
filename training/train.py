@@ -13,7 +13,7 @@ def train_baseline(version: str = "v1"):
     scaler = fit_scaler(ref)  # fitted on train only, stored in the manifest
 
     y = ref["Class"]
-    spw = float((y == 0).sum() / max((y == 1).sum(), 1))
+    spw = float((y == 0).sum() / max((y == 1).sum(), 1)) #scale_pos_weight (tells xgboost to pay much more attention to the rare fraud class).
     model = build_model(spw)
     model.fit(apply_scaler(ref, scaler), y)
 

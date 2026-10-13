@@ -5,7 +5,7 @@ from core.features import DRIFT_COLUMNS
 from training.drift import compute_drift, psi
 
 
-def _frame(n, seed, shift=0.0):
+def _frame(n, seed, shift=0.0): #shift -> the mean or average.
     rng = np.random.default_rng(seed)
     return pd.DataFrame(rng.normal(shift, 1, size=(n, len(DRIFT_COLUMNS))), columns=DRIFT_COLUMNS)
 
@@ -20,10 +20,10 @@ def test_detects_shifted_distribution():
     assert res["drift_detected"] and res["drift_share"] > 0.9
 
 
-def test_insufficient_samples_is_safe():
+def test_insufficient_samples_is_safe(): #checks minimum sample rule behaviour.
     assert not compute_drift(_frame(1000, 1), _frame(5, 2))["drift_detected"]
 
 
-def test_psi_zero_for_identical():
+def test_psi_zero_for_identical(): #identical distributions produce near-zero PSI. there should be no distribution change.
     x = np.random.default_rng(0).normal(size=2000)
     assert psi(x, x) < 1e-6

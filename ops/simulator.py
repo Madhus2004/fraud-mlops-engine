@@ -25,7 +25,7 @@ def run(api_url: str, batches: int, batch_size: int, drift: bool, feedback_rate:
             sample["V1"] *= 3.0
             sample["Amount"] *= 10.0
         ok = fb = 0
-        for rec in sample.to_dict(orient="records"):
+        for rec in sample.to_dict(orient="records"): # take one dictionary at a time called rec(orient="recoreds" -> make each row one seperate dictionary).
             label = int(rec.pop("Class"))
             try:
                 r = requests.post(f"{api_url}/predict", json=rec, timeout=60)
@@ -45,7 +45,7 @@ def run(api_url: str, batches: int, batch_size: int, drift: bool, feedback_rate:
 
 
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser() # creates a tool that provide settings from command line.
     ap.add_argument("--api-url", default=os.getenv("API_URL", "http://127.0.0.1:8000"))
     ap.add_argument("--batches", type=int, default=3)
     ap.add_argument("--batch-size", type=int, default=30)

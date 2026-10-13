@@ -61,7 +61,7 @@ with tab_test:
         try:
             r = requests.post(f"{API_URL}/predict", json=payload, timeout=30)
             if r.ok:
-                st.session_state["last"] = r.json()
+                st.session_state["last"] = r.json() #API response stored as python dictionary.
             else:
                 st.error(f"API error {r.status_code}: {r.text}")
         except Exception as exc:
@@ -73,7 +73,7 @@ with tab_test:
         y.metric("Risk score", f"{res['risk_score']:.4f}")
         z.metric("Decision", "🚨 FLAGGED" if res["is_flagged"] else "✅ APPROVED")
         w.metric("Model", res["model_version"])
-        st.json(res)
+        st.json(res) #display API response in JSON format.
 
 # ---- Tab 2 ----
 with tab_logs:
@@ -96,7 +96,7 @@ with tab_logs:
         if label != "All":
             df = df[df["actual_label"].notna() == (label == "Labeled")]
 
-        lab = df.dropna(subset=["actual_label"])
+        lab = df.dropna(subset=["actual_label"]) # null values in actual_label col is removed. keep transaction where true result is known.
         tp = int(((lab["is_flagged"] == 1) & (lab["actual_label"] == 1)).sum())
         fp = int(((lab["is_flagged"] == 1) & (lab["actual_label"] == 0)).sum())
         fn = int(((lab["is_flagged"] == 0) & (lab["actual_label"] == 1)).sum())

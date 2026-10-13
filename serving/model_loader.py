@@ -11,7 +11,7 @@ class ModelStore:
     """Loads the champion once and hot-swaps it atomically on reload."""
 
     def __init__(self):
-        self._lock = threading.Lock()
+        self._lock = threading.Lock() #This protects the model when multiple API requests happen at the same time. The lock helps prevent one request from seeing the model while it is being replaced/reloaded.
         self.booster = None
         self.manifest = None
 
@@ -23,6 +23,7 @@ class ModelStore:
             except Exception as exc:  # fall back to a bundled/local copy
                 print(f"Hub pull failed ({exc}); trying local artifacts.")
         booster, manifest = load_artifact(directory)
+        # Safely swap the model and manifest together so other threads don't see a partial update.
         with self._lock:
             self.booster, self.manifest = booster, manifest
         return manifest
@@ -32,7 +33,8 @@ class ModelStore:
         return self.booster is not None
 
     def score(self, features: dict) -> float:
-        with self._lock:
+        # Safely get the current model and manifest; prediction itself can run concurrently.
+        with self._lock:  
             booster, manifest = self.booster, self.manifest
         X = apply_scaler(pd.DataFrame([features]), manifest["scaler"])
         return float(predict_proba(booster, X)[0])

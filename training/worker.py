@@ -64,8 +64,11 @@ if __name__ == "__main__":
     ap.add_argument("--min-new-labels", type=int, default=50)
     ap.add_argument("--window-hours", type=float, default=24)
     a = ap.parse_args()
+    force = a.force
     while True:
-        run_once(a.force, a.min_new_labels, window_hours=a.window_hours)
+        run_once(force, a.min_new_labels, window_hours=a.window_hours)
+        force = False # --force applies to the first pass only.
         if not a.loop:
             break
         time.sleep(a.interval)
+# 

@@ -29,7 +29,7 @@ def get_engine():
         import re
         url = os.getenv("DATABASE_URL", "sqlite:///fraud_logs.db")
         url = re.sub(r"^postgres(ql)?(\+\w+)?://", "postgresql+psycopg2://", url)
-        kwargs = {"pool_pre_ping": True}
+        kwargs = {"pool_pre_ping": True} #checks database connection is still alive
         if not url.startswith("sqlite"):
             kwargs.update(pool_size=2, max_overflow=2, pool_recycle=300)
         _engine = create_engine(url, **kwargs)

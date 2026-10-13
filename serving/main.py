@@ -14,7 +14,7 @@ from serving.model_loader import store
 async def lifespan(app: FastAPI):
     init_db()
     try:
-        store.load()
+        store.load() #load active model
     except Exception as exc:
         print(f"WARNING: no model loaded at startup: {exc}")
     yield
@@ -51,7 +51,7 @@ def health():
 def predict(payload: TransactionInput):
     if not store.ready:
         raise HTTPException(status_code=503, detail="Model not loaded")
-    features = payload.model_dump()
+    features = payload.model_dump() #Converts the validated Pydantic object into a Python dictionary.
     assert set(features) == set(FEATURE_COLUMNS)
     prob = store.score(features)
     threshold, version = store.manifest["threshold"], store.manifest["version"]

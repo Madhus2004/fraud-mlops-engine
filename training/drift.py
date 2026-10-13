@@ -28,11 +28,13 @@ def compute_drift(reference: pd.DataFrame, current: pd.DataFrame, alpha: float =
                 "features": [], "message": f"Need >= {min_samples} live samples."}
     rows = []
     for col in DRIFT_COLUMNS:
-        if col not in reference or col not in current:
+        if col not in reference or col not in current: #skip feature move to next if ref or current doesn't have same feature cols.
             continue
-        ref, cur = reference[col].dropna().values, current[col].dropna().values
-        stat, p = ks_2samp(ref, cur)
-        score = psi(ref, cur)
+        ref, cur = reference[col].dropna().values, current[col].dropna().values #.values turns the pandas series into an array.
+        stat, p = ks_2samp(ref, cur) #are ref and cur distributions different?.
+        #STAT -> KS Statistic explains how big is the difference.
+        #p -> p-value explains is this difference statistically convincing.
+        score = psi(ref, cur) # how much has the distribution changed? 
         rows.append({"feature": col, "ks_stat": round(float(stat), 4), "p_value": float(p),
                      "psi": round(score, 4), "drifted": bool((p < alpha and stat >= min_ks) or score > psi_threshold)})
     share = sum(r["drifted"] for r in rows) / max(len(rows), 1)
@@ -43,10 +45,10 @@ def compute_drift(reference: pd.DataFrame, current: pd.DataFrame, alpha: float =
 
 def run_drift_check(window_hours: float = 24, **kwargs) -> dict:
     reference = pd.read_parquet(REFERENCE_PATH)
-    current = expand_features(fetch_logs(since_hours=window_hours))
+    current = expand_features(fetch_logs(since_hours=window_hours)) #features is inside features_json in db but drift detection needs a normal Dataframe so expand_features().
     return compute_drift(reference, current, **kwargs)
 
-
-if __name__ == "__main__":
+#helps that import of this file in another location doesn't automatically start a drift check.
+if __name__ == "__main__": #if file is run directly, then its true and code underneath is executed.
     res = run_drift_check()
-    print({k: v for k, v in res.items() if k != "features"})
+    print({k: v for k, v in res.items() if k != "features"}) # not printing feature because it makes termal output huge.

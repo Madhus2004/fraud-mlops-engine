@@ -6,10 +6,10 @@ from xgboost import XGBClassifier
 from core.artifacts import save_artifact
 from core.features import FEATURE_COLUMNS, apply_scaler, fit_scaler
 
-
+#artificial rule used to generate labels for testing.
 def make_frame(n=400, seed=0):
     rng = np.random.default_rng(seed)
-    df = pd.DataFrame(rng.normal(size=(n, len(FEATURE_COLUMNS))), columns=FEATURE_COLUMNS)
+    df = pd.DataFrame(rng.normal(size=(n, len(FEATURE_COLUMNS))), columns=FEATURE_COLUMNS) #rng.normal -> creates a randome value from a normal distribution.
     df["Amount"] = np.abs(df["Amount"]) * 100
     df["Time"] = np.abs(df["Time"]) * 1000
     df["Class"] = (df["V1"] + df["V2"] > 1.5).astype(int)
@@ -33,6 +33,6 @@ def api_client(tmp_path, monkeypatch):
     from core import db
     db.reset_engine()
     from serving.main import app
-    with TestClient(app) as client:
-        yield client
+    with TestClient(app) as client: #TestClient(app) -> creates a client for making test requests.
+        yield client #yield client -> provideds the client to the test that requested the fixture.
     db.reset_engine()
