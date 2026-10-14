@@ -46,7 +46,7 @@ def run(api_url: str, batches: int, batch_size: int, drift: bool, feedback_rate:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser() # creates a tool that provide settings from command line.
-    ap.add_argument("--api-url", default=os.getenv("API_URL", "http://127.0.0.1:8000"))
+    ap.add_argument("--api-url", default=os.getenv("SIM_API_URL", "http://127.0.0.1:8000"))
     ap.add_argument("--batches", type=int, default=3)
     ap.add_argument("--batch-size", type=int, default=30)
     ap.add_argument("--drift", action="store_true")
